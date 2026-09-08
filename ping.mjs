@@ -6,7 +6,7 @@ for (const key of required) {
 const response = await fetch(process.env.MONITOR_URL, {
   method: "POST",
   headers: {
-    authorization: `Bearer ${process.env.SITE_BYPASS_TOKEN}`,
+    "OAI-Sites-Authorization": `Bearer ${process.env.SITE_BYPASS_TOKEN}`,
     "x-monitor-secret": process.env.MONITOR_SECRET,
     accept: "application/json",
   },
