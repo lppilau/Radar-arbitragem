@@ -3,41 +3,79 @@ for (const key of required) {
   if (!process.env[key]) throw new Error(`${key} não configurada`);
 }
 
-const assets = ["BTC", "ETH", "SOL"];
+const assets = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "LINK", "AVAX", "BCH", "USDT", "USDC"];
+const krakenSymbols = { BTC: "XBT", DOGE: "XDG" };
 
 async function json(url) {
   const response = await fetch(url, {
-    headers: { accept: "application/json", "user-agent": "RadarArbitragemPaper/3.0" },
+    headers: { accept: "application/json", "user-agent": "RadarArbitragemPaper/4.0" },
     signal: AbortSignal.timeout(12_000),
   });
-  if (!response.ok) throw new Error(`feed respondeu ${response.status}: ${url}`);
+  if (!response.ok) throw new Error(`feed respondeu ${response.status}`);
   return response.json();
 }
 
-const quotes = [];
-await Promise.all(assets.flatMap((asset) => {
-  const krakenPair = `${asset === "BTC" ? "XBT" : asset}USD`;
-  return [
-    json(`https://api.exchange.coinbase.com/products/${asset}-USD/book?level=1`).then((book) => {
-      quotes.push({
-        asset, venue: "Coinbase", market: "Spot",
-        bid: Number(book.bids?.[0]?.[0]), ask: Number(book.asks?.[0]?.[0]),
-        bidSize: Number(book.bids?.[0]?.[1]), askSize: Number(book.asks?.[0]?.[1]), source: "live",
-      });
-    }),
-    json(`https://api.kraken.com/0/public/Depth?pair=${krakenPair}&count=1`).then((payload) => {
-      const book = Object.values(payload.result ?? {})[0];
-      if (!book?.bids?.[0] || !book?.asks?.[0]) throw new Error(`Kraken sem livro para ${asset}`);
-      quotes.push({
-        asset, venue: "Kraken", market: "Spot",
-        bid: Number(book.bids[0][0]), ask: Number(book.asks[0][0]),
-        bidSize: Number(book.bids[0][1]), askSize: Number(book.asks[0][1]), source: "live",
-      });
-    }),
-  ];
-}));
+function levels(values) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((level) => Array.isArray(level)
+      ? [Number(level[0]), Number(level[1])]
+      : [Number(level?.price ?? level?.unit_price), Number(level?.amount ?? level?.quantity)])
+    .filter(([price, size]) => Number.isFinite(price) && price > 0 && Number.isFinite(size) && size > 0)
+    .slice(0, 10);
+}
 
-if (quotes.length !== assets.length * 2) throw new Error("cotações incompletas");
+function quote(asset, venue, quoteCurrency, payload) {
+  const bids = levels(payload?.bids);
+  const asks = levels(payload?.asks);
+  if (!bids.length || !asks.length) throw new Error("livro vazio");
+  return {
+    asset,
+    venue,
+    quoteCurrency,
+    market: "Spot",
+    bid: bids[0][0],
+    ask: asks[0][0],
+    bidSize: bids[0][1],
+    askSize: asks[0][1],
+    bidDepth: bids.reduce((sum, [price, size]) => sum + price * size, 0),
+    askDepth: asks.reduce((sum, [price, size]) => sum + price * size, 0),
+    source: "live",
+  };
+}
+
+const quotes = [];
+const errors = [];
+const tasks = [];
+
+for (const asset of assets) {
+  tasks.push(
+    json(`https://api.exchange.coinbase.com/products/${asset}-USD/book?level=2`)
+      .then((book) => quotes.push(quote(asset, "Coinbase", "USD", book)))
+      .catch((error) => errors.push(`Coinbase ${asset}: ${error.message}`)),
+  );
+
+  const krakenPair = `${krakenSymbols[asset] ?? asset}USD`;
+  tasks.push(
+    json(`https://api.kraken.com/0/public/Depth?pair=${krakenPair}&count=10`)
+      .then((payload) => {
+        const book = Object.values(payload.result ?? {})[0];
+        quotes.push(quote(asset, "Kraken", "USD", book));
+      })
+      .catch((error) => errors.push(`Kraken ${asset}: ${error.message}`)),
+  );
+
+  tasks.push(
+    json(`https://api.mercadobitcoin.net/api/v4/${asset}-BRL/orderbook?limit=10`)
+      .then((book) => quotes.push(quote(asset, "Mercado Bitcoin", "BRL", book)))
+      .catch((error) => errors.push(`Mercado Bitcoin ${asset}: ${error.message}`)),
+  );
+}
+
+await Promise.all(tasks);
+
+const comparableAssets = assets.filter((asset) => quotes.filter((item) => item.asset === asset).length >= 2);
+if (!comparableAssets.length) throw new Error(`nenhum ativo comparável: ${errors.slice(0, 4).join("; ")}`);
 
 const response = await fetch(process.env.MONITOR_URL, {
   method: "POST",
@@ -52,4 +90,10 @@ const response = await fetch(process.env.MONITOR_URL, {
 });
 const body = await response.text();
 if (!response.ok) throw new Error(`monitor respondeu ${response.status}: ${body.slice(0, 300)}`);
-console.log(body);
+console.log(JSON.stringify({
+  event: "paper_scan_complete",
+  quotes: quotes.length,
+  comparableAssets: comparableAssets.length,
+  feedErrors: errors.length,
+  result: JSON.parse(body),
+}));
