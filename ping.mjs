@@ -91,7 +91,7 @@ async function fetchScan() {
             continue;
           }
           const book = { bids: [[ticker.bid, ticker.bidSize]], asks: [[ticker.ask, ticker.askSize]] };
-          const referencePrice = Number(ticker.markPrice ?? ticker.indexPrice);
+          const referencePrice = (Number(ticker.bid) + Number(ticker.ask)) / 2;
           const fundingPerHour = Number(ticker.fundingRatePrediction ?? ticker.fundingRate ?? 0);
           const fundingEightHoursPct = referencePrice > 0 ? fundingPerHour / referencePrice * 100 * 8 : 0;
           try {
