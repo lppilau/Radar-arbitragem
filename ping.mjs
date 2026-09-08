@@ -108,7 +108,7 @@ async function fetchScan() {
   return { quotes, errors };
 }
 
-async function sendScan(quotes) {
+async function sendScan(quotes, recordHistory = false) {
   const comparableAssets = assets.filter((asset) => quotes.filter((item) => item.asset === asset && item.market === "Spot").length >= 2);
   if (!comparableAssets.length) throw new Error("nenhum ativo comparável");
   const response = await fetch(process.env.MONITOR_URL, {
@@ -116,6 +116,7 @@ async function sendScan(quotes) {
     headers: {
       "OAI-Sites-Authorization": `Bearer ${process.env.SITE_BYPASS_TOKEN}`,
       "x-monitor-secret": process.env.MONITOR_SECRET,
+      ...(recordHistory ? { "x-history-sample": "1" } : {}),
       "content-type": "application/json",
       accept: "application/json",
     },
@@ -130,7 +131,7 @@ async function sendScan(quotes) {
 const summary = { scans: 0, quoteSnapshots: 0, feedErrors: 0, approved: 0, lastResult: null };
 for (let index = 0; index < scansPerRun; index += 1) {
   const { quotes, errors } = await fetchScan();
-  const result = await sendScan(quotes);
+  const result = await sendScan(quotes, index === scansPerRun - 1);
   summary.scans += 1;
   summary.quoteSnapshots += quotes.length;
   summary.feedErrors += errors.length;
