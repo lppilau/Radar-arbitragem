@@ -50,21 +50,6 @@ function quote(asset, venue, quoteCurrency, payload, market = "Spot", fundingRat
   };
 }
 
-function normalizeBybit(quotes) {
-  const anchors = quotes
-    .filter((item) => item.asset === "USDT" && item.quoteCurrency === "USD" && item.market === "Spot")
-    .map((item) => (item.bid + item.ask) / 2)
-    .sort((a, b) => a - b);
-  const usdtUsd = anchors.length ? anchors[Math.floor(anchors.length / 2)] : 1;
-  for (const item of quotes.filter((entry) => entry.venue === "Bybit" && entry.quoteCurrency === "USDT")) {
-    item.bid *= usdtUsd;
-    item.ask *= usdtUsd;
-    item.bidDepth *= usdtUsd;
-    item.askDepth *= usdtUsd;
-    item.quoteCurrency = "USD";
-  }
-}
-
 async function fetchScan() {
   const quotes = [];
   const errors = [];
@@ -93,32 +78,31 @@ async function fetchScan() {
         .catch((error) => errors.push(`Mercado Bitcoin ${asset}: ${error.message}`)),
     );
 
-    if (asset !== "USDT") {
-      tasks.push(
-        json(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${asset}USDT&limit=10`)
-          .then((payload) => quotes.push(quote(asset, "Bybit", "USDT", payload.result)))
-          .catch((error) => errors.push(`Bybit spot ${asset}: ${error.message}`)),
-      );
-    }
   }
 
-  for (const asset of futuresAssets) {
-    tasks.push((async () => {
-      try {
-        const [orderbook, ticker] = await Promise.all([
-          json(`https://api.bybit.com/v5/market/orderbook?category=linear&symbol=${asset}USDT&limit=10`),
-          json(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${asset}USDT`),
-        ]);
-        const fundingRatePct = Number(ticker?.result?.list?.[0]?.fundingRate) * 100;
-        quotes.push(quote(asset, "Bybit", "USDT", orderbook.result, "Futuro", fundingRatePct));
-      } catch (error) {
-        errors.push(`Bybit futuro ${asset}: ${error.message}`);
-      }
-    })());
-  }
+  tasks.push(
+    json("https://futures.kraken.com/derivatives/api/v3/tickers")
+      .then((payload) => {
+        for (const asset of futuresAssets) {
+          const pair = `${krakenSymbols[asset] ?? asset}:USD`;
+          const ticker = (payload.tickers ?? []).find((item) => item.tag === "perpetual" && item.pair === pair && !item.suspended);
+          if (!ticker) {
+            errors.push(`Kraken futuro ${asset}: contrato indisponível`);
+            continue;
+          }
+          const book = { bids: [[ticker.bid, ticker.bidSize]], asks: [[ticker.ask, ticker.askSize]] };
+          const fundingEightHoursPct = Number(ticker.fundingRatePrediction ?? ticker.fundingRate ?? 0) * 100 * 8;
+          try {
+            quotes.push(quote(asset, "Kraken", "USD", book, "Futuro", fundingEightHoursPct));
+          } catch (error) {
+            errors.push(`Kraken futuro ${asset}: ${error.message}`);
+          }
+        }
+      })
+      .catch((error) => errors.push(`Kraken futuros: ${error.message}`)),
+  );
 
   await Promise.all(tasks);
-  normalizeBybit(quotes);
   return { quotes, errors };
 }
 
