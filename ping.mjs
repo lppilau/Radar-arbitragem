@@ -91,7 +91,9 @@ async function fetchScan() {
             continue;
           }
           const book = { bids: [[ticker.bid, ticker.bidSize]], asks: [[ticker.ask, ticker.askSize]] };
-          const fundingEightHoursPct = Number(ticker.fundingRatePrediction ?? ticker.fundingRate ?? 0) * 100 * 8;
+          const referencePrice = Number(ticker.markPrice ?? ticker.indexPrice);
+          const fundingPerHour = Number(ticker.fundingRatePrediction ?? ticker.fundingRate ?? 0);
+          const fundingEightHoursPct = referencePrice > 0 ? fundingPerHour / referencePrice * 100 * 8 : 0;
           try {
             quotes.push(quote(asset, "Kraken", "USD", book, "Futuro", fundingEightHoursPct));
           } catch (error) {
