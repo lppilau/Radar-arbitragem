@@ -63,7 +63,7 @@ async function fetchScan() {
     );
 
     tasks.push(
-      json(`https://api.binance.com/api/v3/depth?symbol=${asset}USDT&limit=10`)
+      json(`https://data-api.binance.vision/api/v3/depth?symbol=${asset}USDT&limit=10`)
         .then((book) => quotes.push(quote(asset, "Binance", "USDT", book)))
         .catch((error) => errors.push(`Binance spot ${asset}: ${error.message}`)),
     );
@@ -148,13 +148,14 @@ async function sendScan(quotes, recordHistory = false) {
   return JSON.parse(body);
 }
 
-const summary = { scans: 0, quoteSnapshots: 0, feedErrors: 0, approved: 0, lastResult: null };
+const summary = { scans: 0, quoteSnapshots: 0, feedErrors: 0, sampleErrors: [], approved: 0, lastResult: null };
 for (let index = 0; index < scansPerRun; index += 1) {
   const { quotes, errors } = await fetchScan();
   const result = await sendScan(quotes, index === scansPerRun - 1);
   summary.scans += 1;
   summary.quoteSnapshots += quotes.length;
   summary.feedErrors += errors.length;
+  for (const error of errors) if (summary.sampleErrors.length < 8 && !summary.sampleErrors.includes(error)) summary.sampleErrors.push(error);
   summary.approved += result.approved ? 1 : 0;
   summary.lastResult = result;
   if (index < scansPerRun - 1) await new Promise((resolve) => setTimeout(resolve, intervalMs));
