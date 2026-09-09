@@ -54,6 +54,12 @@ async function fetchScan() {
   const quotes = [];
   const errors = [];
   const tasks = [];
+  const binanceFuturesAvailable = await json("https://fapi.binance.com/fapi/v1/ping")
+    .then(() => true)
+    .catch((error) => {
+      errors.push(`Binance futuros indisponíveis nesta região: ${error.message}`);
+      return false;
+    });
 
   for (const asset of assets) {
     tasks.push(
@@ -68,7 +74,7 @@ async function fetchScan() {
         .catch((error) => errors.push(`Binance spot ${asset}: ${error.message}`)),
     );
 
-    if (futuresAssets.includes(asset)) {
+    if (binanceFuturesAvailable && futuresAssets.includes(asset)) {
       tasks.push(
         Promise.all([
           json(`https://fapi.binance.com/fapi/v1/depth?symbol=${asset}USDT&limit=10`),
