@@ -4,14 +4,14 @@ for (const key of required) {
 }
 
 const assets = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "LINK", "AVAX", "BCH", "USDT", "USDC", "PAXG"];
-const futuresAssets = assets.filter((asset) => !["USDT", "USDC", "PAXG"].includes(asset));
+const futuresAssets = assets.filter((asset) => !["USDT", "USDC"].includes(asset));
 const krakenSymbols = { BTC: "XBT", DOGE: "XDG" };
 const scansPerRun = 8;
 const intervalMs = 5_000;
 
 async function json(url) {
   const response = await fetch(url, {
-    headers: { accept: "application/json", "user-agent": "RadarArbitragemPaper/5.0" },
+    headers: { accept: "application/json", "user-agent": "RadarArbitragemPaper/6.0" },
     signal: AbortSignal.timeout(12_000),
   });
   if (!response.ok) throw new Error(`feed respondeu ${response.status}`);
@@ -61,6 +61,26 @@ async function fetchScan() {
         .then((book) => quotes.push(quote(asset, "Coinbase", "USD", book)))
         .catch((error) => errors.push(`Coinbase ${asset}: ${error.message}`)),
     );
+
+    tasks.push(
+      json(`https://api.binance.com/api/v3/depth?symbol=${asset}USDT&limit=10`)
+        .then((book) => quotes.push(quote(asset, "Binance", "USDT", book)))
+        .catch((error) => errors.push(`Binance spot ${asset}: ${error.message}`)),
+    );
+
+    if (futuresAssets.includes(asset)) {
+      tasks.push(
+        Promise.all([
+          json(`https://fapi.binance.com/fapi/v1/depth?symbol=${asset}USDT&limit=10`),
+          json(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${asset}USDT`),
+        ])
+          .then(([book, premium]) => {
+            const fundingRatePct = Number(premium?.lastFundingRate ?? 0) * 100;
+            quotes.push(quote(asset, "Binance", "USDT", book, "Futuro", fundingRatePct));
+          })
+          .catch((error) => errors.push(`Binance futuro ${asset}: ${error.message}`)),
+      );
+    }
 
     const krakenPair = `${krakenSymbols[asset] ?? asset}USD`;
     tasks.push(
