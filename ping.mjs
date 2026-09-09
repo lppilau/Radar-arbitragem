@@ -3,8 +3,8 @@ for (const key of required) {
   if (!process.env[key]) throw new Error(`${key} não configurada`);
 }
 
-const assets = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "LINK", "AVAX", "BCH", "USDT", "USDC"];
-const futuresAssets = assets.filter((asset) => !["USDT", "USDC"].includes(asset));
+const assets = ["BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "LTC", "LINK", "AVAX", "BCH", "USDT", "USDC", "PAXG"];
+const futuresAssets = assets.filter((asset) => !["USDT", "USDC", "PAXG"].includes(asset));
 const krakenSymbols = { BTC: "XBT", DOGE: "XDG" };
 const scansPerRun = 8;
 const intervalMs = 5_000;
