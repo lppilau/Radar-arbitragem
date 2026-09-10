@@ -65,7 +65,9 @@ function quote(asset, payload, market, extra = {}) {
 async function referenceData() {
   const [tickersResult, fundingResult] = await Promise.allSettled([
     futuresJson("/fapi/v1/ticker/24hr"),
-    futuresJson("/fapi/v1/fundingRate?limit=100"),
+    // One aggregated request keeps the collector light while retaining the
+    // settled events for all monitored assets, including their mark prices.
+    futuresJson("/fapi/v1/fundingRate?limit=1000"),
   ]);
   const tickers = tickersResult.status === "fulfilled" ? tickersResult.value : [];
   const funding = fundingResult.status === "fulfilled" ? fundingResult.value : [];
